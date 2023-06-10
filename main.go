@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"io/fs"
 	"fmt"
 	_ "regexp"
 )
@@ -16,10 +17,9 @@ support stdin and file
 func main() {
 	f, e := os.Stdin.Stat()
 	if e != nil {
-		fmt.Println("error getting stdin info:", e)
-		os.Exit(1)
+		panic(e)
 	}
-	if f.Size() > 0 {
+	if f.Mode() & fs.ModeCharDevice == 0 {
 		// grab from stdin
 		fmt.Println("From stdin")
 	} else {
