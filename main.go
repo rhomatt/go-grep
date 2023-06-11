@@ -24,13 +24,13 @@ func processLine(line , pattern string) (string, bool) {
 func processFile(file *os.File, pattern string, wg *sync.WaitGroup) {
 	scanner := bufio.NewScanner(file)
 	scanner.Split(bufio.ScanLines)
-	count := 0
 
 	for inputLeft := scanner.Scan(); inputLeft ; inputLeft = scanner.Scan(){
-		count++
 		line := scanner.Text()
-		match, _ := processLine(line, pattern)
-		fmt.Printf("file: %s\nline: %d:%s:%s\n", file.Name(), count, line, match)
+		match, matchFound := processLine(line, pattern)
+		if matchFound {
+			fmt.Printf("%s: %s\n", file.Name(), match)
+		}
 	}
 }
 
