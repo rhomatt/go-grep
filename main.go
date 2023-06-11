@@ -22,8 +22,6 @@ func processLine(line , pattern string) (string, bool) {
 }
 
 func processFile(file *os.File, pattern string, wg *sync.WaitGroup) {
-	defer wg.Done()
-	defer file.Close()
 	scanner := bufio.NewScanner(file)
 	scanner.Split(bufio.ScanLines)
 	count := 0
@@ -32,11 +30,13 @@ func processFile(file *os.File, pattern string, wg *sync.WaitGroup) {
 		count++
 		line := scanner.Text()
 		match, _ := processLine(line, pattern)
-		fmt.Printf("line: %d:%s:%s\n", count, line, match)
+		fmt.Printf("file: %s\nline: %d:%s:%s\n", file.Name(), count, line, match)
 	}
 }
 
 func processPath(file *os.File, pattern string, wg *sync.WaitGroup) {
+	defer wg.Done()
+	defer file.Close()
 	stat, e := file.Stat()
 	if e != nil {
 		panic(e)
@@ -45,8 +45,6 @@ func processPath(file *os.File, pattern string, wg *sync.WaitGroup) {
 		processFile(file, pattern, wg)
 		return
 	}
-	defer wg.Done()
-	defer file.Close()
 
 	fileNames, e := file.Readdirnames(0)
 	if e != nil {
