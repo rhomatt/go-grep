@@ -15,6 +15,8 @@ type matchInfo struct {
 	matching string
 }
 
+type matches []matchInfo
+
 var printLock *sync.Mutex = new(sync.Mutex)
 
 // return a match if found
@@ -29,7 +31,7 @@ func processLine(line , pattern string) (string, bool) {
 	return "", false
 }
 
-func printResuts(fileName string, results []matchInfo, wg *sync.WaitGroup) {
+func (results matches) printResuts(fileName string, wg *sync.WaitGroup) {
 	defer wg.Done()
 	printLock.Lock()
 	for _, result := range(results) {
@@ -44,7 +46,7 @@ func processFile(file *os.File, pattern string, wg *sync.WaitGroup) {
 	scanner := bufio.NewScanner(file)
 	scanner.Split(bufio.ScanLines)
 	lineNumber := 1
-	results := make([]matchInfo, 0)
+	results := make(matches, 0)
 
 	for inputLeft := scanner.Scan(); inputLeft ; inputLeft = scanner.Scan() {
 		line := scanner.Text()
@@ -56,7 +58,7 @@ func processFile(file *os.File, pattern string, wg *sync.WaitGroup) {
 	}
 
 	wg.Add(1)
-	go printResuts(file.Name(), results, wg)
+	go results.printResuts(file.Name(), wg)
 }
 
 func processPath(file *os.File, pattern string, wg *sync.WaitGroup) {
