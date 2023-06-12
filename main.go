@@ -9,6 +9,23 @@ import (
 	"sync"
 )
 
+type matchInfo struct {
+	lineNumber int
+	line string
+	matching string
+}
+
+type safeResults struct {
+	mu *sync.Mutex
+	matches map[string]matchInfo
+}
+
+func (sr *safeResults) addResult(lineNumber int, file, line, matching string) {
+	sr.mu.Lock()
+	sr.matches[file] = matchInfo{lineNumber, line, matching}
+	sr.mu.Unlock()
+}
+
 // return a match if found
 func processLine(line , pattern string) (string, bool) {
 	re := regexp.MustCompilePOSIX(pattern)
@@ -21,28 +38,32 @@ func processLine(line , pattern string) (string, bool) {
 	return "", false
 }
 
-func processFile(file *os.File, pattern string, wg *sync.WaitGroup) {
+func processFile(file *os.File, pattern string, wg *sync.WaitGroup, results *safeResults) {
+	defer wg.Done()
+	defer file.Close()
 	scanner := bufio.NewScanner(file)
 	scanner.Split(bufio.ScanLines)
+	lineNumber := 1
 
-	for inputLeft := scanner.Scan(); inputLeft ; inputLeft = scanner.Scan(){
+	for inputLeft := scanner.Scan(); inputLeft ; inputLeft = scanner.Scan() {
 		line := scanner.Text()
 		match, matchFound := processLine(line, pattern)
 		if matchFound {
-			fmt.Printf("%s: %s\n", file.Name(), match)
+			results.addResult(lineNumber, file.Name(), line, match)
+			//fmt.Printf("%s: %s\n", file.Name(), match)
 		}
+		lineNumber++
 	}
 }
 
-func processPath(file *os.File, pattern string, wg *sync.WaitGroup) {
-	defer wg.Done()
-	defer file.Close()
+func processPath(file *os.File, pattern string, wg *sync.WaitGroup, results *safeResults) {
 	stat, e := file.Stat()
 	if e != nil {
 		panic(e)
 	}
 	if !stat.Mode().IsDir() {
-		processFile(file, pattern, wg)
+		wg.Add(1)
+		go processFile(file, pattern, wg, results)
 		return
 	}
 
@@ -55,8 +76,7 @@ func processPath(file *os.File, pattern string, wg *sync.WaitGroup) {
 		if e != nil {
 			panic(e)
 		}
-		wg.Add(1)
-		go processPath(newFile, pattern, wg)
+		processPath(newFile, pattern, wg, results)
 	}
 }
 
@@ -98,8 +118,12 @@ func main() {
 		}
 	}
 
+	results := &safeResults{mu: new(sync.Mutex), matches: make(map[string]matchInfo)}
 	wg := new(sync.WaitGroup)
-	wg.Add(1)
-	go processPath(target, pattern, wg)
+	processPath(target, pattern, wg, results)
 	wg.Wait()
+
+	for file, result := range(results.matches) {
+		fmt.Printf("%s: %d: %s", file, result.lineNumber, result.matching)
+	}
 }
