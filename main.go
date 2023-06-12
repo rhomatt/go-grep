@@ -15,16 +15,7 @@ type matchInfo struct {
 	matching string
 }
 
-type safeResults struct {
-	mu *sync.Mutex
-	matches map[string]matchInfo
-}
-
-func (sr *safeResults) addResult(lineNumber int, file, line, matching string) {
-	sr.mu.Lock()
-	sr.matches[file] = matchInfo{lineNumber, line, matching}
-	sr.mu.Unlock()
-}
+var printLock *sync.Mutex = new(sync.Mutex)
 
 // return a match if found
 func processLine(line , pattern string) (string, bool) {
@@ -38,32 +29,44 @@ func processLine(line , pattern string) (string, bool) {
 	return "", false
 }
 
-func processFile(file *os.File, pattern string, wg *sync.WaitGroup, results *safeResults) {
+func printResuts(fileName string, results []matchInfo, wg *sync.WaitGroup) {
+	defer wg.Done()
+	printLock.Lock()
+	for _, result := range(results) {
+		fmt.Printf("%s: %d: %s\n", fileName, result.lineNumber, result.matching)
+	}
+	printLock.Unlock()
+}
+
+func processFile(file *os.File, pattern string, wg *sync.WaitGroup) {
 	defer wg.Done()
 	defer file.Close()
 	scanner := bufio.NewScanner(file)
 	scanner.Split(bufio.ScanLines)
 	lineNumber := 1
+	results := make([]matchInfo, 0)
 
 	for inputLeft := scanner.Scan(); inputLeft ; inputLeft = scanner.Scan() {
 		line := scanner.Text()
 		match, matchFound := processLine(line, pattern)
 		if matchFound {
-			results.addResult(lineNumber, file.Name(), line, match)
-			//fmt.Printf("%s: %s\n", file.Name(), match)
+			results = append(results, matchInfo{line: line, lineNumber: lineNumber, matching: match})
 		}
 		lineNumber++
 	}
+
+	wg.Add(1)
+	go printResuts(file.Name(), results, wg)
 }
 
-func processPath(file *os.File, pattern string, wg *sync.WaitGroup, results *safeResults) {
+func processPath(file *os.File, pattern string, wg *sync.WaitGroup) {
 	stat, e := file.Stat()
 	if e != nil {
 		panic(e)
 	}
 	if !stat.Mode().IsDir() {
 		wg.Add(1)
-		go processFile(file, pattern, wg, results)
+		go processFile(file, pattern, wg)
 		return
 	}
 
@@ -76,7 +79,7 @@ func processPath(file *os.File, pattern string, wg *sync.WaitGroup, results *saf
 		if e != nil {
 			panic(e)
 		}
-		processPath(newFile, pattern, wg, results)
+		processPath(newFile, pattern, wg)
 	}
 }
 
@@ -87,6 +90,8 @@ support -r, -i
 support stdin and file
 */
 func main() {
+	// TODO
+	// consider using https://pkg.go.dev/flag for arg parsing
 	if len(os.Args) < 2 {
 		fmt.Println("no pattern provided")
 		os.Exit(1)
@@ -118,12 +123,7 @@ func main() {
 		}
 	}
 
-	results := &safeResults{mu: new(sync.Mutex), matches: make(map[string]matchInfo)}
 	wg := new(sync.WaitGroup)
-	processPath(target, pattern, wg, results)
+	processPath(target, pattern, wg)
 	wg.Wait()
-
-	for file, result := range(results.matches) {
-		fmt.Printf("%s: %d: %s", file, result.lineNumber, result.matching)
-	}
 }
